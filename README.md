@@ -70,7 +70,26 @@ Aegis is an open-source **reverse proxy** purpose-built for AI agent traffic. De
 ## Key Features
 
 ### 🔍 Prompt Injection Detection
-Multi-layered detection engine that identifies and blocks prompt injection attempts using pattern matching, heuristic analysis, and classifier-based detection.
+Multi-layered detection engine that identifies and blocks prompt injection attempts using an **ensemble approach** — combining exact pattern matching with an ML classifier powered by semantic feature extraction and logistic regression. Catches both known attack patterns and novel paraphrased variants.
+
+```
+Input text
+    │
+    ├──→ [Pattern Matching]  5 exact-match categories (fast, ~μs)
+    │        instruction override, prompt extraction, role manipulation,
+    │        encoding evasion, delimiter injection
+    │
+    ├──→ [ML Classifier]     12 features → logistic regression (~μs)
+    │        6 semantic cluster scores (action + target word co-occurrence)
+    │        imperative tone, special char density, role markers,
+    │        negation-action combos, urgency, multi-instruction
+    │
+    └──→ [Ensemble]
+            ├── Both detect  → high confidence, combined signal
+            ├── Pattern only → use pattern result
+            ├── ML only      → catches novel variants patterns miss
+            └── Neither      → pass
+```
 
 ### 🔒 PII Detection & Masking
 Automatically detects and masks sensitive data (emails, phone numbers, SSNs, credit cards, API keys, etc.) in both requests and responses before they reach the LLM.
@@ -153,9 +172,8 @@ aegis/
 │   │   │   ├── masker.go            # PII masking strategies
 │   │   │   └── entities.go          # PII entity definitions & patterns
 │   │   ├── injection/
-│   │   │   ├── detector.go          # Prompt injection detection
-│   │   │   ├── patterns.go          # Known attack pattern database
-│   │   │   └── heuristic.go         # Heuristic analysis rules
+│   │   │   ├── detector.go          # Ensemble detection (pattern + ML)
+│   │   │   └── classifier.go        # ML classifier (semantic features + logistic regression)
 │   │   ├── content/
 │   │   │   ├── filter.go            # Topic & content filtering
 │   │   │   └── wordlist.go          # Blocked content wordlists
@@ -607,7 +625,7 @@ Embed Aegis directly into your Go application as a library — no separate serve
 - [x] Admin API (health, metrics)
 
 ### v0.2.0 — Enhanced Detection
-- [ ] Advanced prompt injection detection (ML classifier)
+- [x] Advanced prompt injection detection (ML classifier)
 - [ ] Content/topic filtering
 - [ ] Response schema validation
 - [ ] Token counting & rate limiting
@@ -650,6 +668,7 @@ Aegis is designed for minimal latency overhead:
 | Proxy pass-through (no guards) | <1ms |
 | PII scan (regex) | ~1ms |
 | Injection detection (pattern) | ~1ms |
+| Injection detection (pattern + ML ensemble) | ~1ms |
 | Full guard pipeline | <5ms |
 | Streaming first-byte delay | <2ms |
 
