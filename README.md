@@ -91,6 +91,42 @@ Input text
             └── Neither      → pass
 ```
 
+### 🛑 Content & Topic Filtering
+Category-based content policy engine with 6 built-in categories and support for custom rules. Uses word-boundary matching to avoid false positives (e.g., "nonviolence" does **not** trigger the "violence" filter).
+
+```
+Input text
+    │
+    ├──→ [Tokenizer]           Split into words for boundary-aware matching
+    │
+    ├──→ [Category Matcher]    Check each enabled category
+    │       ├── violence         keywords: massacre, homicide, ...
+    │       ├── self_harm        phrases: "how to commit suicide", ...
+    │       ├── illegal_activity phrases: "money laundering", ...
+    │       ├── weapons          phrases: "how to make a bomb", ...
+    │       ├── hate_speech      keywords: genocide, phrases: "ethnic cleansing", ...
+    │       ├── sexual_content   phrases: "child exploitation", ...
+    │       └── (custom)         user-defined keywords & phrases
+    │
+    ├──→ [Allowed Context]     "educational" / "medical" → skip low-severity
+    │
+    └──→ [Result Aggregation]
+            ├── Per-category action (block / warn / log)
+            ├── Highest-severity action wins
+            └── All matches reported as Findings
+```
+
+**Built-in Categories:**
+
+| Category | Severity | Example Triggers |
+|----------|----------|-----------------|
+| `violence` | high | "how to kill someone", "massacre" |
+| `self_harm` | critical | "suicide methods", "how to hurt myself" |
+| `illegal_activity` | high | "money laundering", "drug trafficking" |
+| `weapons` | critical | "how to make a bomb", "chemical weapon" |
+| `hate_speech` | high | "ethnic cleansing", "genocide" |
+| `sexual_content` | medium | "child exploitation", "pornographic" |
+
 ### 🔒 PII Detection & Masking
 Automatically detects and masks sensitive data (emails, phone numbers, SSNs, credit cards, API keys, etc.) in both requests and responses before they reach the LLM.
 
@@ -118,7 +154,15 @@ policies:
 
       - guard: content
         action: block
-        denied_topics: [violence, illegal_activity]
+        categories:
+          violence: { action: block, severity: high }
+          self_harm: { action: block, severity: critical }
+          illegal_activity: { action: warn }
+          custom_finance:
+            keywords: [insider]
+            phrases: ["pump and dump"]
+            action: block
+        allowed_contexts: [educational, medical]
 
       - guard: schema
         action: block
@@ -175,8 +219,8 @@ aegis/
 │   │   │   ├── detector.go          # Ensemble detection (pattern + ML)
 │   │   │   └── classifier.go        # ML classifier (semantic features + logistic regression)
 │   │   ├── content/
-│   │   │   ├── filter.go            # Topic & content filtering
-│   │   │   └── wordlist.go          # Blocked content wordlists
+│   │   │   ├── filter.go            # Category-based content filter engine
+│   │   │   └── categories.go        # Built-in category definitions (6 categories)
 │   │   ├── schema/
 │   │   │   └── validator.go         # Response schema validation
 │   │   └── token/
@@ -460,6 +504,28 @@ guards:
   content:
     enabled: true
     action: block
+    categories:                        # per-category config (optional)
+      violence:
+        action: block
+        severity: high
+      self_harm:
+        action: block
+        severity: critical
+      illegal_activity:
+        action: warn
+      weapons:
+        action: block
+        severity: critical
+      hate_speech:
+        action: block
+        severity: high
+      sexual_content:
+        action: block
+        severity: medium
+    allowed_contexts:                  # skip low-severity in these contexts
+      - educational
+      - medical
+      - historical
   token:
     enabled: true
     max_per_request: 8192
@@ -626,7 +692,7 @@ Embed Aegis directly into your Go application as a library — no separate serve
 
 ### v0.2.0 — Enhanced Detection
 - [x] Advanced prompt injection detection (ML classifier)
-- [ ] Content/topic filtering
+- [x] Content/topic filtering (category-based, word boundary, allowed contexts)
 - [ ] Response schema validation
 - [ ] Token counting & rate limiting
 - [ ] Streaming (SSE) support

@@ -48,9 +48,18 @@ type InjectionGuardConfig struct {
 }
 
 type ContentGuardConfig struct {
-	Enabled      bool     `yaml:"enabled"`
-	Action       string   `yaml:"action"`
-	DeniedTopics []string `yaml:"denied_topics"`
+	Enabled         bool                       `yaml:"enabled"`
+	Action          string                     `yaml:"action"`
+	DeniedTopics    []string                   `yaml:"denied_topics"`
+	Categories      map[string]CategoryConfig  `yaml:"categories"`
+	AllowedContexts []string                   `yaml:"allowed_contexts"`
+}
+
+type CategoryConfig struct {
+	Action   string   `yaml:"action"`
+	Keywords []string `yaml:"keywords"`
+	Phrases  []string `yaml:"phrases"`
+	Severity string   `yaml:"severity"`
 }
 
 type TokenGuardConfig struct {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/YoungsoonLee/aegis/internal/config"
+	contentfilter "github.com/YoungsoonLee/aegis/internal/guard/content"
 	"github.com/YoungsoonLee/aegis/internal/guard/injection"
 	"github.com/YoungsoonLee/aegis/internal/guard/pii"
 )
@@ -90,27 +91,60 @@ func (g *injectionGuardAdapter) Check(ctx context.Context, content *Content) (*R
 
 // contentGuardAdapter wraps the content filter as a Guard.
 type contentGuardAdapter struct {
-	cfg config.ContentGuardConfig
+	cfg    config.ContentGuardConfig
+	filter *contentfilter.Filter
 }
 
 func (g *contentGuardAdapter) Name() string { return "content" }
 
 func (g *contentGuardAdapter) Check(_ context.Context, content *Content) (*Result, error) {
-	fullText := strings.ToLower(extractText(content))
+	if g.filter == nil {
+		g.filter = g.buildFilter()
+	}
 
-	for _, topic := range g.cfg.DeniedTopics {
-		if strings.Contains(fullText, strings.ToLower(topic)) {
-			action := Action(g.cfg.Action)
-			return &Result{
-				GuardName: g.Name(),
-				Action:    action,
-				Blocked:   action == ActionBlock,
-				Details:   fmt.Sprintf("denied topic detected: %s", topic),
-			}, nil
+	fullText := extractText(content)
+	filterResult := g.filter.Check(fullText)
+
+	if !filterResult.Detected {
+		return &Result{GuardName: g.Name(), Action: ActionPass}, nil
+	}
+
+	action := Action(filterResult.Action)
+	findings := make([]Finding, len(filterResult.Matches))
+	for i, m := range filterResult.Matches {
+		findings[i] = Finding{
+			Type:       m.Category,
+			Value:      m.Term,
+			Confidence: 1.0,
 		}
 	}
 
-	return &Result{GuardName: g.Name(), Action: ActionPass}, nil
+	return &Result{
+		GuardName: g.Name(),
+		Action:    action,
+		Blocked:   action == ActionBlock,
+		Details:   fmt.Sprintf("content policy violation: categories [%s]", strings.Join(filterResult.Categories, ", ")),
+		Findings:  findings,
+	}, nil
+}
+
+func (g *contentGuardAdapter) buildFilter() *contentfilter.Filter {
+	categories := make(map[string]contentfilter.CategoryOverride, len(g.cfg.Categories))
+	for name, cat := range g.cfg.Categories {
+		categories[name] = contentfilter.CategoryOverride{
+			Action:   cat.Action,
+			Keywords: cat.Keywords,
+			Phrases:  cat.Phrases,
+			Severity: cat.Severity,
+		}
+	}
+
+	return contentfilter.NewFilter(contentfilter.FilterConfig{
+		DefaultAction:   g.cfg.Action,
+		DeniedTopics:    g.cfg.DeniedTopics,
+		Categories:      categories,
+		AllowedContexts: g.cfg.AllowedContexts,
+	})
 }
 
 // tokenGuardAdapter wraps the token limiter as a Guard.
