@@ -22,6 +22,7 @@ const (
 type Detector struct {
 	sensitivity Sensitivity
 	patterns    []pattern
+	classifier  *Classifier
 }
 
 type pattern struct {
@@ -41,7 +42,7 @@ func NewDetector(sensitivity string) *Detector {
 		s = SensitivityMedium
 	}
 
-	d := &Detector{sensitivity: s}
+	d := &Detector{sensitivity: s, classifier: NewClassifier()}
 	d.patterns = d.buildPatterns()
 	return d
 }
@@ -164,6 +165,43 @@ func (d *Detector) buildPatterns() []pattern {
 }
 
 func (d *Detector) Detect(text string) DetectionResult {
+	if text == "" {
+		return DetectionResult{}
+	}
+
+	patternResult := d.detectPatterns(text)
+	mlResult := d.classifier.Classify(text)
+
+	patternDetected := patternResult.Detected
+	mlDetected := mlResult.Score >= d.getMLThreshold()
+
+	switch {
+	case patternDetected && mlDetected:
+		patterns := make([]string, len(patternResult.Patterns))
+		copy(patterns, patternResult.Patterns)
+		patterns = append(patterns, mlResult.Features...)
+		confidence := max(patternResult.Confidence, mlResult.Confidence)
+		return DetectionResult{
+			Detected:   true,
+			Score:      patternResult.Score,
+			Patterns:   patterns,
+			Confidence: min(confidence*1.1, 1.0),
+		}
+	case patternDetected:
+		return patternResult
+	case mlDetected:
+		return DetectionResult{
+			Detected:   true,
+			Score:      mlResult.Score * 2.0,
+			Patterns:   mlResult.Features,
+			Confidence: mlResult.Confidence,
+		}
+	default:
+		return patternResult
+	}
+}
+
+func (d *Detector) detectPatterns(text string) DetectionResult {
 	var totalScore float64
 	var matchedPatterns []string
 
@@ -192,5 +230,16 @@ func (d *Detector) getThreshold() float64 {
 		return 1.5
 	default:
 		return 0.8
+	}
+}
+
+func (d *Detector) getMLThreshold() float64 {
+	switch d.sensitivity {
+	case SensitivityHigh:
+		return 0.45
+	case SensitivityLow:
+		return 0.80
+	default:
+		return 0.55
 	}
 }
