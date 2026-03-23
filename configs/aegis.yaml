@@ -1,0 +1,45 @@
+server:
+  listen: ":8080"
+  admin_listen: ":9090"
+  tls:
+    enabled: false
+
+targets:
+  - name: openai
+    url: https://api.openai.com
+    default: true
+    headers:
+      Authorization: "Bearer ${OPENAI_API_KEY}"
+
+guards:
+  pii:
+    enabled: true
+    action: mask
+    entities:
+      - email
+      - phone
+      - ssn
+      - credit_card
+      - api_key
+  injection:
+    enabled: true
+    action: block
+    sensitivity: medium
+  content:
+    enabled: false
+    action: block
+    denied_topics: []
+  token:
+    enabled: false
+    max_per_request: 8192
+    max_per_minute: 200000
+
+audit:
+  enabled: true
+  sinks:
+    - type: stdout
+      format: json
+
+logging:
+  level: info
+  format: text

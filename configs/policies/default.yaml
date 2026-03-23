@@ -1,0 +1,23 @@
+policies:
+  - name: default
+    rules:
+      - guard: pii
+        action: mask
+        severity: high
+        params:
+          entities:
+            - email
+            - phone
+            - ssn
+            - credit_card
+
+      - guard: injection
+        action: block
+        severity: critical
+        params:
+          sensitivity: medium
+
+      - guard: token
+        action: block
+        params:
+          max_per_request: 8192

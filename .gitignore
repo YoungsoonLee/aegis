@@ -1,0 +1,40 @@
+# Binary output
+bin/
+aegis
+
+# Go build cache
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment & secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Audit logs
+logs/
+*.jsonl
+
+# AI memory files
+CLAUDE.md
+
+# Coverage
+coverage.out
+coverage.html
