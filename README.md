@@ -35,7 +35,7 @@ Aegis is an open-source **reverse proxy** purpose-built for AI agent traffic. De
 
 ```
 ┌─────────────┐       ┌──────────────────────────────────┐       ┌─────────────┐
-│             │       │           Aegis Proxy             │       │             │
+│             │       │           Aegis Proxy            │       │             │
 │  AI Agent   │──────▶│                                  │──────▶│  LLM API    │
 │  (any       │       │  ┌──────────┐  ┌──────────────┐  │       │  (OpenAI,   │
 │  framework) │◀──────│  │ Inbound  │  │  Outbound    │  │◀──────│  Anthropic, │
@@ -260,16 +260,16 @@ All security checks implement a single `Guard` interface. Adding a new guard (e.
 ┌──────────────────────────────────────────┐
 │              Guard Engine                │
 │                                          │
-│  ┌─────────┐ ┌───────────┐ ┌─────────┐  │
-│  │   PII   │ │ Injection │ │ Content │  │
-│  │  Guard  │ │   Guard   │ │  Guard  │  │
-│  └────┬────┘ └─────┬─────┘ └────┬────┘  │
+│  ┌─────────┐ ┌───────────┐ ┌─────────┐   │
+│  │   PII   │ │ Injection │ │ Content │   │
+│  │  Guard  │ │   Guard   │ │  Guard  │   │
+│  └────┬────┘ └─────┬─────┘ └────┬────┘   │
 │       │            │            │        │
 │       ▼            ▼            ▼        │
 │  ┌──────────────────────────────────┐    │
-│  │   All guards implement Guard{}  │    │
-│  │   → Name() string              │    │
-│  │   → Check(ctx, content) result  │    │
+│  │   All guards implement Guard{}   │    │
+│  │   → Name() string                │    │
+│  │   → Check(ctx, content) result   │    │
 │  └──────────────────────────────────┘    │
 │                                          │
 │  ✦ New guard? Just implement Guard{}     │
@@ -559,10 +559,10 @@ Deploy Aegis as a shared service (Docker on EC2, ECS, Kubernetes, etc.). All age
 ┌─────────────────────────────┐
 │  Same EC2 / K8s Pod         │      ┌──────────────┐
 │                             │      │              │
-│  ┌────────┐   ┌───────┐    │─────▶│  LLM APIs    │
-│  │ Agent  │──▶│ Aegis │    │      │              │
-│  │        │◀──│:8080  │    │◀─────│              │
-│  └────────┘   └───────┘    │      └──────────────┘
+│  ┌────────┐   ┌───────┐     │─────▶│  LLM APIs    │
+│  │ Agent  │──▶│ Aegis │     │      │              │
+│  │        │◀──│:8080  │     │◀─────│              │
+│  └────────┘   └───────┘     │      └──────────────┘
 │                             │
 └─────────────────────────────┘
 ```
