@@ -33,6 +33,7 @@ type GuardsConfig struct {
 	Injection InjectionGuardConfig `yaml:"injection"`
 	Content   ContentGuardConfig   `yaml:"content"`
 	Token     TokenGuardConfig     `yaml:"token"`
+	Schema    SchemaGuardConfig    `yaml:"schema"`
 }
 
 type PIIGuardConfig struct {
@@ -66,6 +67,24 @@ type TokenGuardConfig struct {
 	Enabled       bool  `yaml:"enabled"`
 	MaxPerRequest int64 `yaml:"max_per_request"`
 	MaxPerMinute  int64 `yaml:"max_per_minute"`
+}
+
+type SchemaGuardConfig struct {
+	Enabled  bool              `yaml:"enabled"`
+	Action   string            `yaml:"action"`
+	Response *SchemaDefinition `yaml:"response"`
+}
+
+type SchemaDefinition struct {
+	Type       string                        `yaml:"type"`
+	Required   []string                      `yaml:"required"`
+	Properties map[string]*SchemaDefinition  `yaml:"properties"`
+	Items      *SchemaDefinition             `yaml:"items"`
+	Enum       []string                      `yaml:"enum"`
+	Minimum    *float64                      `yaml:"minimum"`
+	Maximum    *float64                      `yaml:"maximum"`
+	MinLength  *int                          `yaml:"min_length"`
+	MaxLength  *int                          `yaml:"max_length"`
 }
 
 type PolicyConfig struct {

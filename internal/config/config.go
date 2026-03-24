@@ -64,6 +64,10 @@ func defaultConfig() *Config {
 				MaxPerRequest: 8192,
 				MaxPerMinute:  200000,
 			},
+			Schema: SchemaGuardConfig{
+				Enabled: false,
+				Action:  "warn",
+			},
 		},
 		Audit: AuditConfig{
 			Enabled: true,

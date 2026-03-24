@@ -12,6 +12,7 @@ import (
 	"github.com/YoungsoonLee/aegis/internal/audit"
 	"github.com/YoungsoonLee/aegis/internal/config"
 	"github.com/YoungsoonLee/aegis/internal/guard"
+	"github.com/YoungsoonLee/aegis/internal/guard/schema"
 	"github.com/YoungsoonLee/aegis/internal/policy"
 )
 
@@ -345,5 +346,190 @@ func TestProxy_ResponseFormat(t *testing.T) {
 	}
 	if resp["id"] != "chatcmpl-123" {
 		t.Error("response should contain upstream response data")
+	}
+}
+
+func testSchemaValidator() *schema.Validator {
+	return schema.NewValidator(&schema.Schema{
+		Type:     "object",
+		Required: []string{"answer", "confidence"},
+		Properties: map[string]*schema.Schema{
+			"answer":     {Type: "string"},
+			"confidence": {Type: "number"},
+		},
+	})
+}
+
+func TestProxy_SchemaValidation_ValidResponse(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": `{"answer":"Paris","confidence":0.95}`}},
+			},
+		})
+	})
+
+	p, _ := setupProxy(t, config.GuardsConfig{}, upstream)
+	p.EnableResponseValidation(testSchemaValidator(), "block")
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"Hi"}]}`))
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if _, ok := resp["choices"]; !ok {
+		t.Error("valid response should pass through with original body")
+	}
+}
+
+func TestProxy_SchemaValidation_BlockInvalid(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": `{"answer":"Paris"}`}},
+			},
+		})
+	})
+
+	p, _ := setupProxy(t, config.GuardsConfig{}, upstream)
+	p.EnableResponseValidation(testSchemaValidator(), "block")
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"Hi"}]}`))
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusUnprocessableEntity)
+	}
+
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	errObj, ok := resp["error"].(map[string]any)
+	if !ok {
+		t.Fatal("response should have error object")
+	}
+	if errObj["type"] != "schema_violation" {
+		t.Errorf("error type = %q, want %q", errObj["type"], "schema_violation")
+	}
+	if errObj["guard"] != "schema" {
+		t.Errorf("guard = %q, want %q", errObj["guard"], "schema")
+	}
+}
+
+func TestProxy_SchemaValidation_WarnPassthrough(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": `{"answer":"Paris"}`}},
+			},
+		})
+	})
+
+	p, _ := setupProxy(t, config.GuardsConfig{}, upstream)
+	p.EnableResponseValidation(testSchemaValidator(), "warn")
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"Hi"}]}`))
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d (warn should pass through)", w.Code, http.StatusOK)
+	}
+
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if _, ok := resp["choices"]; !ok {
+		t.Error("warn mode should pass through original response")
+	}
+}
+
+func TestProxy_SchemaValidation_NonJSONContent(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "This is plain text, not JSON"}},
+			},
+		})
+	})
+
+	p, _ := setupProxy(t, config.GuardsConfig{}, upstream)
+	p.EnableResponseValidation(testSchemaValidator(), "block")
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"Hi"}]}`))
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("status = %d, want %d (non-JSON content should fail)", w.Code, http.StatusUnprocessableEntity)
+	}
+}
+
+func TestProxy_SchemaValidation_StreamingSkipped(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}\n\n"))
+	})
+
+	p, _ := setupProxy(t, config.GuardsConfig{}, upstream)
+	p.EnableResponseValidation(testSchemaValidator(), "block")
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"Hi"}],"stream":true}`))
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d (streaming should skip validation)", w.Code, http.StatusOK)
+	}
+}
+
+func TestProxy_SchemaValidation_NoContent(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": ""}},
+			},
+		})
+	})
+
+	p, _ := setupProxy(t, config.GuardsConfig{}, upstream)
+	p.EnableResponseValidation(testSchemaValidator(), "block")
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"Hi"}]}`))
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d (empty content should skip validation)", w.Code, http.StatusOK)
+	}
+}
+
+func TestProxy_SchemaValidation_Disabled(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "not json at all"}},
+			},
+		})
+	})
+
+	p, _ := setupProxy(t, config.GuardsConfig{}, upstream)
+
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"messages":[{"role":"user","content":"Hi"}]}`))
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d (no validator should pass through)", w.Code, http.StatusOK)
 	}
 }
