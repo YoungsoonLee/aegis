@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,14 +15,17 @@ import (
 	"github.com/YoungsoonLee/aegis/internal/audit"
 	"github.com/YoungsoonLee/aegis/internal/config"
 	"github.com/YoungsoonLee/aegis/internal/guard"
+	"github.com/YoungsoonLee/aegis/internal/guard/schema"
 )
 
 type Proxy struct {
-	targets     map[string]*target
-	defaultName string
-	guardEngine *guard.Engine
-	auditLogger *audit.Logger
-	logger      *slog.Logger
+	targets         map[string]*target
+	defaultName     string
+	guardEngine     *guard.Engine
+	auditLogger     *audit.Logger
+	logger          *slog.Logger
+	schemaValidator *schema.Validator
+	schemaAction    string
 }
 
 type target struct {
@@ -47,6 +51,7 @@ func New(targets []config.Target, ge *guard.Engine, al *audit.Logger, logger *sl
 
 		rp := httputil.NewSingleHostReverseProxy(u)
 		rp.ErrorHandler = p.errorHandler
+		rp.ModifyResponse = p.validateResponse
 
 		t := &target{
 			name:    tc.Name,
@@ -193,4 +198,62 @@ func (p *Proxy) errorHandler(w http.ResponseWriter, r *http.Request, err error) 
 	json.NewEncoder(w).Encode(map[string]string{
 		"error": "upstream target unavailable",
 	})
+}
+
+// EnableResponseValidation configures the proxy to validate LLM responses
+// against a JSON schema before returning them to the caller.
+func (p *Proxy) EnableResponseValidation(v *schema.Validator, action string) {
+	p.schemaValidator = v
+	p.schemaAction = action
+}
+
+func (p *Proxy) validateResponse(resp *http.Response) error {
+	if p.schemaValidator == nil {
+		return nil
+	}
+
+	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+		return nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		return nil
+	}
+
+	result, validated := p.schemaValidator.ValidateResponse(body)
+	if !validated || result.Valid {
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		return nil
+	}
+
+	p.logger.Warn("response schema validation failed",
+		"errors", len(result.Errors),
+		"details", result.String(),
+	)
+
+	if p.schemaAction == "block" {
+		errorBody, _ := json.Marshal(map[string]any{
+			"error": map[string]any{
+				"message": "response failed schema validation",
+				"type":    "schema_violation",
+				"guard":   "schema",
+				"details": result.Errors,
+			},
+		})
+		resp.Body = io.NopCloser(bytes.NewReader(errorBody))
+		resp.ContentLength = int64(len(errorBody))
+		resp.StatusCode = http.StatusUnprocessableEntity
+		resp.Header.Set("Content-Type", "application/json")
+		return nil
+	}
+
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	return nil
 }

@@ -33,6 +33,20 @@ guards:
     enabled: false
     max_per_request: 8192
     max_per_minute: 200000
+  schema:
+    enabled: false
+    action: warn
+    # response:
+    #   type: object
+    #   required: [answer, confidence]
+    #   properties:
+    #     answer:
+    #       type: string
+    #       min_length: 1
+    #     confidence:
+    #       type: number
+    #       minimum: 0
+    #       maximum: 1
 
 audit:
   enabled: true

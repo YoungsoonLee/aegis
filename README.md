@@ -116,6 +116,35 @@ Input text
             └── All matches reported as Findings
 ```
 
+### ✅ Response Schema Validation
+Outbound guard that intercepts LLM responses and validates the assistant's JSON output against a predefined schema — before it reaches the calling agent. Catches malformed, incomplete, or out-of-spec responses in real time.
+
+```
+LLM Response (HTTP 200)
+    │
+    ├──→ [ModifyResponse hook]     Intercept via httputil.ReverseProxy
+    │
+    ├──→ [Extract Content]         Parse choices[0].message.content
+    │       └── skip if: SSE stream, non-200, empty content
+    │
+    ├──→ [JSON Parse]              Attempt json.Unmarshal
+    │       └── fail → "invalid JSON" error
+    │
+    ├──→ [Schema Validator]        Recursive validation engine
+    │       ├── type        (string / number / integer / boolean / object / array)
+    │       ├── required    (mandatory field presence check)
+    │       ├── properties  (nested property-level type + constraint validation)
+    │       ├── items       (array element schema validation)
+    │       ├── enum        (allowed values whitelist)
+    │       ├── min/max     (numeric range enforcement)
+    │       └── min/max_length (string length bounds)
+    │
+    └──→ [Action]
+            ├── block → 422 Unprocessable Entity + schema_violation error
+            ├── warn  → log warning, pass original response through
+            └── valid → pass through unchanged
+```
+
 **Built-in Categories:**
 
 | Category | Severity | Example Triggers |
@@ -530,6 +559,24 @@ guards:
     enabled: true
     max_per_request: 8192
     max_per_minute: 200000
+  schema:
+    enabled: true
+    action: block                      # block | warn
+    response:                          # expected JSON structure from LLM
+      type: object
+      required: [answer, confidence]
+      properties:
+        answer:
+          type: string
+          min_length: 1
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        sources:
+          type: array
+          items:
+            type: string
 
 audit:
   enabled: true
@@ -693,7 +740,7 @@ Embed Aegis directly into your Go application as a library — no separate serve
 ### v0.2.0 — Enhanced Detection
 - [x] Advanced prompt injection detection (ML classifier)
 - [x] Content/topic filtering (category-based, word boundary, allowed contexts)
-- [ ] Response schema validation
+- [x] Response schema validation (outbound JSON schema validator)
 - [ ] Token counting & rate limiting
 - [ ] Streaming (SSE) support
 - [ ] Docker Compose example (Agent + Aegis)
