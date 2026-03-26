@@ -59,11 +59,12 @@ func defaultConfig() *Config {
 				Enabled: false,
 				Action:  "block",
 			},
-			Token: TokenGuardConfig{
-				Enabled:       false,
-				MaxPerRequest: 8192,
-				MaxPerMinute:  200000,
-			},
+		Token: TokenGuardConfig{
+			Enabled:       false,
+			Action:        "block",
+			MaxPerRequest: 8192,
+			MaxPerMinute:  200000,
+		},
 			Schema: SchemaGuardConfig{
 				Enabled: false,
 				Action:  "warn",

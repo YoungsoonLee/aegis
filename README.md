@@ -156,6 +156,34 @@ LLM Response (HTTP 200)
 | `hate_speech` | high | "ethnic cleansing", "genocide" |
 | `sexual_content` | medium | "child exploitation", "pornographic" |
 
+### ⏱️ Token Counting & Rate Limiting
+Per-client token usage tracking with sliding-window rate limiting. Uses a BPE-like estimator that analyzes text structure (words, CJK characters, numbers, punctuation) for more accurate token counts than simple `chars/4` division.
+
+```
+Incoming Request
+    │
+    ├──→ [Token Estimator]         BPE-like word-level analysis
+    │       ├── English words       1 token per common word (≤10 chars)
+    │       ├── CJK characters      ~2 tokens per character (한국어, 日本語)
+    │       ├── Numbers             ~1 token per 1-3 digits
+    │       └── Punctuation         1 token each
+    │
+    ├──→ [Per-Request Limit]       Block if estimated tokens > max_per_request
+    │
+    ├──→ [Client Identification]   X-Aegis-Client-Id → Authorization → IP
+    │
+    └──→ [Rate Limiter]            Sliding window per client
+            ├── per-minute          Block/warn if > max_per_minute tokens
+            ├── per-hour            Block/warn if > max_per_hour tokens
+            └── on limit hit →      HTTP 429 + Retry-After header
+```
+
+**Client identification priority:**
+1. `X-Aegis-Client-Id` header (explicit)
+2. `Authorization` header prefix (API key fingerprint)
+3. `X-Forwarded-For` first IP
+4. Remote address fallback
+
 ### 🔒 PII Detection & Masking
 Automatically detects and masks sensitive data (emails, phone numbers, SSNs, credit cards, API keys, etc.) in both requests and responses before they reach the LLM.
 
@@ -253,7 +281,8 @@ aegis/
 │   │   ├── schema/
 │   │   │   └── validator.go         # Response schema validation
 │   │   └── token/
-│   │       └── limiter.go           # Token counting & rate limiting
+│   │       ├── estimator.go         # BPE-like token count estimation
+│   │       └── limiter.go           # Sliding window rate limiter
 │   │
 │   ├── policy/
 │   │   ├── engine.go                # Policy evaluation engine
@@ -557,8 +586,10 @@ guards:
       - historical
   token:
     enabled: true
+    action: block                      # block | warn
     max_per_request: 8192
     max_per_minute: 200000
+    # max_per_hour: 5000000
   schema:
     enabled: true
     action: block                      # block | warn
@@ -741,7 +772,7 @@ Embed Aegis directly into your Go application as a library — no separate serve
 - [x] Advanced prompt injection detection (ML classifier)
 - [x] Content/topic filtering (category-based, word boundary, allowed contexts)
 - [x] Response schema validation (outbound JSON schema validator)
-- [ ] Token counting & rate limiting
+- [x] Token counting & rate limiting (BPE-like estimator, sliding window, per-client)
 - [ ] Streaming (SSE) support
 - [ ] Docker Compose example (Agent + Aegis)
 
@@ -782,6 +813,8 @@ Aegis is designed for minimal latency overhead:
 | PII scan (regex) | ~1ms |
 | Injection detection (pattern) | ~1ms |
 | Injection detection (pattern + ML ensemble) | ~1ms |
+| Token estimation (BPE-like) | ~0.1ms |
+| Rate limit check (sliding window) | ~0.01ms |
 | Full guard pipeline | <5ms |
 | Streaming first-byte delay | <2ms |
 

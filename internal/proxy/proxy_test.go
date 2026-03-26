@@ -513,6 +513,120 @@ func TestProxy_SchemaValidation_NoContent(t *testing.T) {
 	}
 }
 
+func TestProxy_TokenRateLimiting_Block(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok": true}`))
+	})
+
+	guardsCfg := config.GuardsConfig{
+		Token: config.TokenGuardConfig{
+			Enabled:      true,
+			Action:       "block",
+			MaxPerMinute: 3,
+		},
+	}
+
+	p, _ := setupProxy(t, guardsCfg, upstream)
+
+	body := `{"messages":[{"role":"user","content":"hello"}]}`
+
+	// Send requests until we hit the rate limit
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		p.ServeHTTP(w, req)
+
+		if w.Code == http.StatusTooManyRequests {
+			if ra := w.Header().Get("Retry-After"); ra == "" {
+				t.Error("Retry-After header should be set on 429 response")
+			}
+			var resp map[string]any
+			json.NewDecoder(w.Body).Decode(&resp)
+			errObj := resp["error"].(map[string]any)
+			if errObj["type"] != "rate_limit_exceeded" {
+				t.Errorf("error type = %q, want %q", errObj["type"], "rate_limit_exceeded")
+			}
+			if errObj["guard"] != "token" {
+				t.Errorf("guard = %q, want %q", errObj["guard"], "token")
+			}
+			return
+		}
+	}
+	t.Error("expected 429 response after exceeding rate limit")
+}
+
+func TestProxy_TokenRateLimiting_PerClientIsolation(t *testing.T) {
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"ok": true}`))
+	})
+
+	guardsCfg := config.GuardsConfig{
+		Token: config.TokenGuardConfig{
+			Enabled:      true,
+			Action:       "block",
+			MaxPerMinute: 3,
+		},
+	}
+
+	p, _ := setupProxy(t, guardsCfg, upstream)
+
+	body := `{"messages":[{"role":"user","content":"hello"}]}`
+
+	// Exhaust client-A's limit
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
+		req.Header.Set("X-Aegis-Client-Id", "client-A")
+		w := httptest.NewRecorder()
+		p.ServeHTTP(w, req)
+	}
+
+	// client-B should still be allowed
+	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("X-Aegis-Client-Id", "client-B")
+	w := httptest.NewRecorder()
+	p.ServeHTTP(w, req)
+
+	if w.Code == http.StatusTooManyRequests {
+		t.Error("client-B should not be rate limited by client-A's usage")
+	}
+}
+
+func TestProxy_ExtractClientID(t *testing.T) {
+	p := &Proxy{}
+
+	// X-Aegis-Client-Id header takes priority
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-Aegis-Client-Id", "my-agent")
+	if got := p.extractClientID(req); got != "my-agent" {
+		t.Errorf("X-Aegis-Client-Id: got %q, want %q", got, "my-agent")
+	}
+
+	// Authorization header prefix used as fallback
+	req = httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer sk-abc123xyz456")
+	id := p.extractClientID(req)
+	if id != "sk-abc12" {
+		t.Errorf("Authorization fallback: got %q, want %q", id, "sk-abc12")
+	}
+
+	// X-Forwarded-For first IP
+	req = httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-Forwarded-For", "1.2.3.4, 5.6.7.8")
+	if got := p.extractClientID(req); got != "1.2.3.4" {
+		t.Errorf("X-Forwarded-For: got %q, want %q", got, "1.2.3.4")
+	}
+
+	// Remote address fallback
+	req = httptest.NewRequest("GET", "/", nil)
+	id = p.extractClientID(req)
+	if id == "" {
+		t.Error("should fall back to RemoteAddr")
+	}
+}
+
 func TestProxy_SchemaValidation_Disabled(t *testing.T) {
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

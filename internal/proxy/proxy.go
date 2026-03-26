@@ -88,9 +88,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	content := p.parseContent(body)
 	content.Direction = guard.DirectionInbound
 	content.Metadata = map[string]string{
-		"method": r.Method,
-		"path":   r.URL.Path,
-		"target": t.name,
+		"method":    r.Method,
+		"path":      r.URL.Path,
+		"target":    t.name,
+		"client_id": p.extractClientID(r),
 	}
 
 	results, err := p.guardEngine.Process(r.Context(), content)
@@ -101,20 +102,34 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if blocked, ok := guard.IsBlocked(results); ok {
+		statusCode := http.StatusForbidden
+		errorType := "guardrail_violation"
+
+		if blocked.StatusCode != 0 {
+			statusCode = blocked.StatusCode
+		}
+		if statusCode == http.StatusTooManyRequests {
+			errorType = "rate_limit_exceeded"
+			if blocked.RetryAfter > 0 {
+				w.Header().Set("Retry-After", fmt.Sprintf("%d", int(blocked.RetryAfter.Seconds())+1))
+			}
+		}
+
 		p.logger.Warn("request blocked",
 			"guard", blocked.GuardName,
 			"details", blocked.Details,
+			"status", statusCode,
 			"path", r.URL.Path,
 		)
 
 		p.logAuditEvent(r, t.name, results, true, start)
 
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusForbidden)
+		w.WriteHeader(statusCode)
 		json.NewEncoder(w).Encode(map[string]any{
 			"error": map[string]any{
 				"message": fmt.Sprintf("request blocked by %s guard: %s", blocked.GuardName, blocked.Details),
-				"type":    "guardrail_violation",
+				"type":    errorType,
 				"guard":   blocked.GuardName,
 			},
 		})
@@ -139,6 +154,25 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.logAuditEvent(r, t.name, results, false, start)
 
 	t.proxy.ServeHTTP(w, r)
+}
+
+func (p *Proxy) extractClientID(r *http.Request) string {
+	if id := r.Header.Get("X-Aegis-Client-Id"); id != "" {
+		return id
+	}
+	if auth := r.Header.Get("Authorization"); auth != "" {
+		if idx := strings.LastIndex(auth, " "); idx >= 0 && len(auth) > idx+8 {
+			return auth[idx+1 : idx+9]
+		}
+		return auth
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if idx := strings.Index(xff, ","); idx > 0 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	return r.RemoteAddr
 }
 
 func (p *Proxy) resolveTarget(r *http.Request) *target {

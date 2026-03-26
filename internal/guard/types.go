@@ -1,6 +1,9 @@
 package guard
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Action string
 
@@ -31,12 +34,14 @@ type Message struct {
 }
 
 type Result struct {
-	GuardName string    `json:"guard_name"`
-	Action    Action    `json:"action"`
-	Blocked   bool      `json:"blocked"`
-	Details   string    `json:"details,omitempty"`
-	Findings  []Finding `json:"findings,omitempty"`
-	Modified  string    `json:"modified,omitempty"`
+	GuardName  string        `json:"guard_name"`
+	Action     Action        `json:"action"`
+	Blocked    bool          `json:"blocked"`
+	Details    string        `json:"details,omitempty"`
+	Findings   []Finding     `json:"findings,omitempty"`
+	Modified   string        `json:"modified,omitempty"`
+	StatusCode int           `json:"status_code,omitempty"`
+	RetryAfter time.Duration `json:"-"`
 }
 
 type Finding struct {
