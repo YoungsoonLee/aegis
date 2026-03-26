@@ -64,9 +64,11 @@ type CategoryConfig struct {
 }
 
 type TokenGuardConfig struct {
-	Enabled       bool  `yaml:"enabled"`
-	MaxPerRequest int64 `yaml:"max_per_request"`
-	MaxPerMinute  int64 `yaml:"max_per_minute"`
+	Enabled       bool   `yaml:"enabled"`
+	Action        string `yaml:"action"`
+	MaxPerRequest int64  `yaml:"max_per_request"`
+	MaxPerMinute  int64  `yaml:"max_per_minute"`
+	MaxPerHour    int64  `yaml:"max_per_hour"`
 }
 
 type SchemaGuardConfig struct {

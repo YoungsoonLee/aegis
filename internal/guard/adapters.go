@@ -9,6 +9,7 @@ import (
 	contentfilter "github.com/YoungsoonLee/aegis/internal/guard/content"
 	"github.com/YoungsoonLee/aegis/internal/guard/injection"
 	"github.com/YoungsoonLee/aegis/internal/guard/pii"
+	"github.com/YoungsoonLee/aegis/internal/guard/token"
 )
 
 // piiGuardAdapter wraps the PII detector/masker as a Guard.
@@ -147,28 +148,72 @@ func (g *contentGuardAdapter) buildFilter() *contentfilter.Filter {
 	})
 }
 
-// tokenGuardAdapter wraps the token limiter as a Guard.
+// tokenGuardAdapter wraps the token estimator and rate limiter as a Guard.
 type tokenGuardAdapter struct {
-	cfg config.TokenGuardConfig
+	cfg       config.TokenGuardConfig
+	estimator *token.Estimator
+	limiter   *token.Limiter
 }
 
 func (g *tokenGuardAdapter) Name() string { return "token" }
 
 func (g *tokenGuardAdapter) Check(_ context.Context, content *Content) (*Result, error) {
-	fullText := extractText(content)
-	// Rough token estimate: ~4 chars per token for English
-	estimatedTokens := int64(len(fullText) / 4)
+	if g.estimator == nil {
+		g.estimator = token.NewEstimator()
+	}
+	if g.limiter == nil && (g.cfg.MaxPerMinute > 0 || g.cfg.MaxPerHour > 0) {
+		g.limiter = token.NewLimiter(token.LimiterConfig{
+			MaxPerMinute: g.cfg.MaxPerMinute,
+			MaxPerHour:   g.cfg.MaxPerHour,
+		})
+	}
 
-	if g.cfg.MaxPerRequest > 0 && estimatedTokens > g.cfg.MaxPerRequest {
+	fullText := extractText(content)
+	estimated := g.estimator.Estimate(fullText)
+
+	action := Action(g.cfg.Action)
+	if action == "" {
+		action = ActionBlock
+	}
+
+	if g.cfg.MaxPerRequest > 0 && estimated > g.cfg.MaxPerRequest {
 		return &Result{
 			GuardName: g.Name(),
-			Action:    ActionBlock,
-			Blocked:   true,
-			Details:   fmt.Sprintf("estimated %d tokens exceeds limit of %d", estimatedTokens, g.cfg.MaxPerRequest),
+			Action:    action,
+			Blocked:   action == ActionBlock,
+			Details:   fmt.Sprintf("estimated %d tokens exceeds per-request limit of %d", estimated, g.cfg.MaxPerRequest),
 		}, nil
 	}
 
-	return &Result{GuardName: g.Name(), Action: ActionPass}, nil
+	if g.limiter != nil {
+		clientID := "default"
+		if content.Metadata != nil {
+			if id, ok := content.Metadata["client_id"]; ok && id != "" {
+				clientID = id
+			}
+		}
+
+		lr := g.limiter.Allow(clientID, estimated)
+		if !lr.Allowed {
+			r := &Result{
+				GuardName: g.Name(),
+				Action:    action,
+				Blocked:   action == ActionBlock,
+				Details:   fmt.Sprintf("rate limit exceeded: %d/%d tokens per %s", lr.Used, lr.Limit, lr.Window),
+			}
+			if action == ActionBlock {
+				r.StatusCode = 429
+				r.RetryAfter = lr.RetryAfter
+			}
+			return r, nil
+		}
+	}
+
+	return &Result{
+		GuardName: g.Name(),
+		Action:    ActionPass,
+		Details:   fmt.Sprintf("estimated %d tokens", estimated),
+	}, nil
 }
 
 func extractText(content *Content) string {

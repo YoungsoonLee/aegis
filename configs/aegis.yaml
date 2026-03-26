@@ -31,8 +31,10 @@ guards:
     denied_topics: []
   token:
     enabled: false
+    action: block
     max_per_request: 8192
     max_per_minute: 200000
+    # max_per_hour: 0
   schema:
     enabled: false
     action: warn
