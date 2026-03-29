@@ -228,6 +228,26 @@ policies:
           required: [answer, confidence]
 ```
 
+### 📡 Streaming (SSE) Support
+Full support for Server-Sent Events streaming — the standard mode used by ChatGPT, Claude, and most LLM SDKs. Aegis detects `"stream": true` requests, relays SSE chunks with immediate flushing, and runs outbound guard checks on the accumulated response after the stream completes.
+
+```
+Client              Aegis Proxy                        LLM API
+  │                     │                                  │
+  │ POST stream:true    │                                  │
+  ├────────────────────►│  [Inbound Guards ✓] ────────────►│
+  │                     │                                  │
+  │                     │◄──── data: {"delta":"Hello"}     │
+  │◄──── flush ─────────│  [parse + accumulate]            │
+  │                     │◄──── data: {"delta":" world"}    │
+  │◄──── flush ─────────│  [accumulate text]               │
+  │                     │◄──── data: [DONE]                │
+  │◄──── flush ─────────│                                  │
+  │                     │                                  │
+  │                     │  [Outbound Guards on full text]  │
+  │                     │  [Audit log with response]       │
+```
+
 ### 📊 Audit Logging
 Every request and response is logged with full context — who sent it, what was detected, what action was taken, and timing information. Supports structured JSON logs, file output, and webhook destinations.
 
@@ -773,7 +793,7 @@ Embed Aegis directly into your Go application as a library — no separate serve
 - [x] Content/topic filtering (category-based, word boundary, allowed contexts)
 - [x] Response schema validation (outbound JSON schema validator)
 - [x] Token counting & rate limiting (BPE-like estimator, sliding window, per-client)
-- [ ] Streaming (SSE) support
+- [x] Streaming (SSE) support (pass-through, chunk parsing, post-stream outbound guards)
 - [ ] Docker Compose example (Agent + Aegis)
 
 ### v0.3.0 — Multi-Provider & Extensibility

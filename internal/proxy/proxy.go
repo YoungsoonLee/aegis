@@ -144,12 +144,17 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	r.Body = io.NopCloser(strings.NewReader(string(finalBody)))
-	r.ContentLength = int64(len(finalBody))
-
 	for k, v := range t.headers {
 		r.Header.Set(k, v)
 	}
+
+	if isStreamingRequest(finalBody) {
+		p.handleStreaming(w, r, t, finalBody, results, start)
+		return
+	}
+
+	r.Body = io.NopCloser(strings.NewReader(string(finalBody)))
+	r.ContentLength = int64(len(finalBody))
 
 	p.logAuditEvent(r, t.name, results, false, start)
 
