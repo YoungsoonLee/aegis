@@ -7,7 +7,7 @@
 *A lightweight, high-performance proxy that sits between your AI agents and LLM providers,*
 *enforcing security policies, detecting threats, and protecting sensitive data — in real time.*
 
-[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://go.dev)
+[![Go Version](https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat&logo=go)](https://go.dev)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/YoungsoonLee/aegis?style=social)](https://github.com/YoungsoonLee/aegis)
 
@@ -32,6 +32,14 @@ Most teams resort to fragile, hand-rolled solutions scattered across their codeb
 ## What is Aegis?
 
 Aegis is an open-source **reverse proxy** purpose-built for AI agent traffic. Deploy it between your agents and LLM APIs to get instant security, observability, and policy enforcement — with **zero code changes** to your existing agents.
+
+<div align="center">
+
+![Aegis Demo — PII masking, prompt injection blocking, and content filtering in action](docs/images/demo-screenshot.png)
+
+*Live demo: PII masking (`[EMAIL]`, `[SSN]`, `[CREDIT_CARD]`), prompt injection blocking, content filtering — all running with `docker compose up`*
+
+</div>
 
 ```
 ┌─────────────┐       ┌──────────────────────────────────┐       ┌─────────────┐
@@ -794,7 +802,7 @@ Embed Aegis directly into your Go application as a library — no separate serve
 - [x] Response schema validation (outbound JSON schema validator)
 - [x] Token counting & rate limiting (BPE-like estimator, sliding window, per-client)
 - [x] Streaming (SSE) support (pass-through, chunk parsing, post-stream outbound guards)
-- [ ] Docker Compose example (Agent + Aegis)
+- [x] Docker Compose example (Agent + Aegis + Mock LLM)
 
 ### v0.3.0 — Multi-Provider & Extensibility
 - [ ] Anthropic native protocol support

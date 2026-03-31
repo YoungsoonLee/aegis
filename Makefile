@@ -25,12 +25,20 @@ clean:
 docker:
 	docker build -t $(APP_NAME):$(VERSION) -f deployments/docker/Dockerfile .
 
-.PHONY: help
+compose-up:
+	docker compose -f examples/docker-compose/docker-compose.yaml up --build
+
+compose-down:
+	docker compose -f examples/docker-compose/docker-compose.yaml down --rmi local
+
+.PHONY: help compose-up compose-down
 help:
 	@echo "Available targets:"
-	@echo "  build   - Build the binary"
-	@echo "  run     - Build and run locally"
-	@echo "  test    - Run tests"
-	@echo "  lint    - Run linter"
-	@echo "  clean   - Remove build artifacts"
-	@echo "  docker  - Build Docker image"
+	@echo "  build        - Build the binary"
+	@echo "  run          - Build and run locally"
+	@echo "  test         - Run tests"
+	@echo "  lint         - Run linter"
+	@echo "  clean        - Remove build artifacts"
+	@echo "  docker       - Build Docker image"
+	@echo "  compose-up   - Start Docker Compose demo"
+	@echo "  compose-down - Stop Docker Compose demo"

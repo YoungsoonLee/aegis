@@ -1,0 +1,58 @@
+server:
+  listen: ":8080"
+  admin_listen: ":9090"
+
+targets:
+  - name: mock-llm
+    url: http://mock-llm:4000
+    default: true
+
+guards:
+  pii:
+    enabled: true
+    action: mask
+    entities:
+      - email
+      - phone
+      - ssn
+      - credit_card
+      - api_key
+  injection:
+    enabled: true
+    action: block
+    sensitivity: medium
+  content:
+    enabled: true
+    action: block
+    categories:
+      violence:
+        action: block
+        severity: high
+      self_harm:
+        action: block
+        severity: critical
+      illegal_activity:
+        action: block
+        severity: high
+      weapons:
+        action: block
+        severity: critical
+      hate_speech:
+        action: block
+        severity: high
+      sexual_content:
+        action: block
+        severity: medium
+  token:
+    enabled: true
+    max_per_request: 8192
+
+audit:
+  enabled: true
+  sinks:
+    - type: stdout
+      format: json
+
+logging:
+  level: debug
+  format: text
